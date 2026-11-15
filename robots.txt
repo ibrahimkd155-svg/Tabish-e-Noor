@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /secure-admin/
+Disallow: /admin.html
+Sitemap: https://tabishnoor.vercel.app/sitemap.xml
