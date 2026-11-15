@@ -1,157 +1,24 @@
 (() => {
-  const $ = id => document.getElementById(id);
-  const url = window.TABISH_SUPABASE_URL;
-  const key = window.TABISH_SUPABASE_ANON_KEY;
-  const ready = url && key && !url.includes('PASTE_') && !key.includes('PASTE_');
-  if (!ready) {
-    $('login-status').textContent = 'تنظیمات اتصال Supabase در دسترس نیست. فایل supabase-config.js را بررسی کنید.';
-    $('password-login').disabled = true;
-    return;
-  }
-
-  const db = window.supabase.createClient(url, key);
-  const status = message => { $('dashboard-status').textContent = message; };
-  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
-  let currentUser = null;
-  let branch = null;
-
-  async function verifyAdmin(user) {
-    // Authorization is checked by the database function against admin_allowlist.
-    const { data, error } = await db.rpc('is_school_admin');
-    if (error) throw error;
-    if (data !== true) throw new Error('این ایمیل در فهرست مدیران مجاز نیست.');
-    return user;
-  }
-
-  async function start() {
-    const { data: { session } } = await db.auth.getSession();
-    if (!session) return;
-    try {
-      currentUser = await verifyAdmin(session.user);
-      $('login-panel').classList.add('admin-hidden');
-      $('dashboard').classList.remove('admin-hidden');
-      $('whoami').textContent = currentUser.email + ' — مدیر مجاز مکتب';
-      await loadBranch();
-      await Promise.all([loadAnnouncements(), loadGallery()]);
-    } catch (error) {
-      await db.auth.signOut();
-      $('login-status').textContent = error.message || 'دسترسی تأیید نشد.';
-    }
-  }
-
-  $('password-login').addEventListener('click', async () => {
-    const email = $('login-email').value.trim();
-    const password = $('login-password').value;
-    if (!email || !password) { $('login-status').textContent = 'ایمیل و رمز عبور را وارد کنید.'; return; }
-    $('password-login').disabled = true;
-    $('login-status').textContent = 'در حال بررسی اطلاعات ورود...';
-    const { error } = await db.auth.signInWithPassword({ email, password });
-    $('password-login').disabled = false;
-    if (error) { $('login-status').textContent = 'ورود انجام نشد. ایمیل و رمز عبور را بررسی کنید.'; return; }
-    await start();
-  });
-  $('login-password').addEventListener('keydown', event => { if (event.key === 'Enter') $('password-login').click(); });
-  $('sign-out').addEventListener('click', async () => { await db.auth.signOut(); location.reload(); });
-
-  async function loadBranch() {
-    const { data, error } = await db.from('branches').select('id,name,address,phone,morning_hours,afternoon_hours,description,image_url,sort_order').order('sort_order', { ascending: true }).order('id', { ascending: true }).limit(1).maybeSingle();
-    if (error) throw error;
-    branch = data || { id: null, name: 'لیسه عالی خصوصی تابش نور', address: 'پروژه خالد ابن ولید قسمت اول، جنوب پارک خالد ابن ولید', phone: '', morning_hours: '۷:۰۰ الی ۱۲:۲۰', afternoon_hours: '۱:۰۰ الی ۴:۳۵', description: 'صنف‌های اول الی دوازدهم' };
-    $('school-name').value = branch.name || '';
-    $('school-address').value = branch.address || '';
-    $('school-phone').value = branch.phone || '';
-    $('morning-hours').value = branch.morning_hours || '';
-    $('afternoon-hours').value = branch.afternoon_hours || '';
-    $('school-description').value = branch.description || '';
-  }
-
-  $('save-school').addEventListener('click', async () => {
-    const payload = {
-      name: $('school-name').value.trim(),
-      address: $('school-address').value.trim(),
-      phone: $('school-phone').value.trim(),
-      morning_hours: $('morning-hours').value.trim(),
-      afternoon_hours: $('afternoon-hours').value.trim(),
-      description: $('school-description').value.trim()
-    };
-    let result;
-    if (branch?.id != null) {
-      result = await db.from('branches').update(payload).eq('id', branch.id);
-    } else {
-      result = await db.from('branches').insert(payload).select('id').single();
-      if (!result.error) payload.id = result.data.id;
-    }
-    if (result.error) { status('ذخیره نشد: ' + result.error.message); return; }
-    branch = { ...branch, ...payload };
-    status('معلومات مکتب با موفقیت ذخیره شد.');
-  });
-
-  async function loadAnnouncements() {
-    const { data, error } = await db.from('announcements').select('id,title,body,published,created_at').order('created_at', { ascending: false });
-    if (error) { status('بارگذاری خبرها ناموفق بود: ' + error.message); return; }
-    $('announcements-list').innerHTML = (data || []).map(item => `<div class="admin-item"><div><strong>${escapeHtml(item.title)}</strong><div class="admin-note">${escapeHtml(item.body)}</div><small>${item.published ? 'نشر شده' : 'پیش‌نویس'}</small></div><button class="admin-btn danger" data-delete-announcement="${escapeHtml(item.id)}">حذف</button></div>`).join('') || '<p class="admin-note">هنوز اطلاعیه‌ای ثبت نشده است.</p>';
-  }
-  $('add-announcement').addEventListener('click', async () => {
-    const title = $('announcement-title').value.trim();
-    const body = $('announcement-body').value.trim();
-    if (!title || !body) { status('عنوان و متن اطلاعیه را وارد کنید.'); return; }
-    const { error } = await db.from('announcements').insert({ title, body, published: true });
-    if (error) { status('اطلاعیه نشر نشد: ' + error.message); return; }
-    $('announcement-title').value = '';
-    $('announcement-body').value = '';
-    await loadAnnouncements();
-    status('اطلاعیه نشر شد.');
-  });
-  $('announcements-list').addEventListener('click', async event => {
-    const id = event.target.dataset.deleteAnnouncement;
-    if (!id) return;
-    const { error } = await db.from('announcements').delete().eq('id', id);
-    if (error) { status('حذف اطلاعیه ناموفق بود: ' + error.message); return; }
-    await loadAnnouncements();
-    status('اطلاعیه حذف شد.');
-  });
-
-  async function loadGallery() {
-    const { data, error } = await db.from('gallery_items').select('id,title,description,storage_path,published,created_at').order('created_at', { ascending: false });
-    if (error) { status('بارگذاری گالری ناموفق بود: ' + error.message); return; }
-    $('gallery-list').innerHTML = (data || []).map(item => {
-      const imageUrl = db.storage.from('school-media').getPublicUrl(item.storage_path).data.publicUrl;
-      return `<div class="admin-item"><img src="${escapeHtml(imageUrl)}" alt=""><span>${escapeHtml(item.title || item.description || 'تصویر گالری')}</span><button class="admin-btn danger" data-delete-gallery="${escapeHtml(item.id)}" data-storage-path="${escapeHtml(item.storage_path)}">حذف</button></div>`;
-    }).join('') || '<p class="admin-note">هنوز تصویری بارگذاری نشده است.</p>';
-  }
-  $('upload-image').addEventListener('click', async () => {
-    const file = $('gallery-file').files[0];
-    if (!file) { status('اول یک تصویر انتخاب کنید.'); return; }
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { status('فقط تصویر JPG، PNG یا WebP قابل بارگذاری است.'); return; }
-    if (file.size > 8 * 1024 * 1024) { status('حجم هر تصویر باید کمتر از ۸ مگابایت باشد.'); return; }
-    const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
-    const path = `1/${crypto.randomUUID()}.${ext}`;
-    status('در حال بارگذاری تصویر...');
-    const upload = await db.storage.from('school-media').upload(path, file, { upsert: false, contentType: file.type });
-    if (upload.error) { status('بارگذاری تصویر ناموفق بود: ' + upload.error.message); return; }
-    const { error } = await db.from('gallery_items').insert({ title: file.name, description: '', storage_path: path, published: true });
-    if (error) {
-      await db.storage.from('school-media').remove([path]);
-      status('ثبت تصویر در گالری ناموفق بود: ' + error.message);
-      return;
-    }
-    $('gallery-file').value = '';
-    await loadGallery();
-    status('تصویر به گالری اضافه شد.');
-  });
-  $('gallery-list').addEventListener('click', async event => {
-    const id = event.target.dataset.deleteGallery;
-    if (!id) return;
-    const path = event.target.dataset.storagePath;
-    const { error } = await db.from('gallery_items').delete().eq('id', id);
-    if (error) { status('حذف تصویر ناموفق بود: ' + error.message); return; }
-    if (path) {
-      const removal = await db.storage.from('school-media').remove([path]);
-      if (removal.error) { status('رکورد حذف شد، اما فایل تصویر حذف نشد: ' + removal.error.message); await loadGallery(); return; }
-    }
-    await loadGallery();
-    status('تصویر حذف شد.');
-  });
-
-  start().catch(error => { $('login-status').textContent = error.message; });
+ const $=id=>document.getElementById(id); const url=window.TABISH_SUPABASE_URL,key=window.TABISH_SUPABASE_ANON_KEY;
+ const ready=url&&key&&!url.includes('PASTE_')&&!key.includes('PASTE_');
+ if(!ready){$('login-status').textContent='برای فعال‌سازی پنل، نشانی پروژه و کلید عمومی Supabase باید در فایل supabase-config.js درج شود. راهنمای SETUP را ببینید.'; $('password-login').disabled=true; return;}
+ const db=window.supabase.createClient(url,key); let profile=null, branches=[];
+ const status=(m)=>$('dashboard-status').textContent=m;
+ const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ async function getProfile(user){const {data,error}=await db.from('admin_users').select('role,branch_no,display_name').eq('user_id',user.id).maybeSingle();if(error)throw error;if(!data)throw new Error('این ایمیل در فهرست مدیران مجاز نیست. با مدیر اصلی تماس بگیرید.');return data;}
+ async function start(){const {data:{session}}=await db.auth.getSession();if(!session)return;try{profile=await getProfile(session.user);$('login-panel').classList.add('admin-hidden');$('dashboard').classList.remove('admin-hidden');$('whoami').textContent=(profile.display_name||session.user.email)+' — '+(profile.role==='school_admin'?'مدیر اصلی':'مدیر نمایندگی');await loadBranches();}catch(e){await db.auth.signOut();$('login-status').textContent=e.message;}}
+ $('password-login').addEventListener('click',async()=>{const email=$('login-email').value.trim();const password=$('login-password').value;if(!email||!password){$('login-status').textContent='ایمیل و رمز عبور را وارد کنید.';return;}$('password-login').disabled=true;$('login-status').textContent='در حال بررسی اطلاعات ورود...';const {error}=await db.auth.signInWithPassword({email,password});$('password-login').disabled=false;if(error){$('login-status').textContent='ورود انجام نشد. ایمیل و رمز عبور را بررسی کنید.';return;}await start();});
+ $('login-password').addEventListener('keydown',e=>{if(e.key==='Enter')$('password-login').click();});
+ $('sign-out').addEventListener('click',async()=>{await db.auth.signOut();location.reload();});
+ async function loadBranches(){let q=db.from('branches').select('*').order('branch_no');if(profile.role!=='school_admin')q=q.eq('branch_no',profile.branch_no);const {data,error}=await q;if(error)throw error;branches=data||[];$('branch-select').innerHTML=branches.map(b=>`<option value="${b.branch_no}">${escapeHtml(b.name_fa||('نمایندگی '+b.branch_no))}</option>`).join('');if(!branches.length)throw new Error('برای این حساب نمایندگی تعیین نشده است.');$('branch-select').addEventListener('change',loadSelected);await loadSelected();}
+ const current=()=>branches.find(b=>String(b.branch_no)===$('branch-select').value);
+ async function loadSelected(){const b=current();if(!b)return;$('branch-name').value=b.name_fa||'';$('branch-phone-edit').value=b.phone||'';$('branch-hours-edit').value=b.hours||'';$('branch-grades-edit').value=b.grades||'';$('branch-address-edit').value=b.address||'';$('branch-programs-edit').value=b.programs||'';$('manager-name-edit').value=b.manager_name||'';$('manager-bio-edit').value=b.manager_bio||'';await Promise.all([loadNews(),loadGallery()]);}
+ $('save-branch').addEventListener('click',async()=>{const b=current();if(!b)return;const patch={name_fa:$('branch-name').value.trim(),phone:$('branch-phone-edit').value.trim(),hours:$('branch-hours-edit').value.trim(),grades:$('branch-grades-edit').value.trim(),address:$('branch-address-edit').value.trim(),programs:$('branch-programs-edit').value.trim(),manager_name:$('manager-name-edit').value.trim(),manager_bio:$('manager-bio-edit').value.trim(),updated_at:new Date().toISOString()};const {error}=await db.from('branches').update(patch).eq('branch_no',b.branch_no);if(error){status(error.message);return;}Object.assign(b,patch);$('branch-select').selectedOptions[0].textContent=patch.name_fa||('نمایندگی '+b.branch_no);status('معلومات نمایندگی ذخیره شد.');});
+ async function loadNews(){const b=current();const {data,error}=await db.from('news').select('*').eq('branch_no',b.branch_no).order('created_at',{ascending:false});if(error){status(error.message);return;}$('news-list').innerHTML=(data||[]).map(n=>`<div class="admin-item"><div><strong>${escapeHtml(n.title)}</strong><div class="admin-note">${escapeHtml(n.body)}</div></div><button class="admin-btn danger" data-del-news="${n.id}">حذف</button></div>`).join('')||'<p class="admin-note">هنوز خبری ثبت نشده است.</p>';}
+ $('add-news').addEventListener('click',async()=>{const b=current(),title=$('news-title').value.trim(),body=$('news-body').value.trim();if(!title||!body){status('عنوان و متن خبر را وارد کنید.');return;}const {error}=await db.from('news').insert({branch_no:b.branch_no,title,body,published:true});if(error){status(error.message);return;}$('news-title').value='';$('news-body').value='';await loadNews();status('خبر نشر شد.');});
+ $('news-list').addEventListener('click',async e=>{const id=e.target.dataset.delNews;if(!id)return;const {error}=await db.from('news').delete().eq('id',id);if(error)status(error.message);else{await loadNews();status('خبر حذف شد.');}});
+ async function loadGallery(){const b=current();const {data,error}=await db.from('gallery').select('*').eq('branch_no',b.branch_no).order('created_at',{ascending:false});if(error){status(error.message);return;}$('gallery-list').innerHTML=(data||[]).map(g=>`<div class="admin-item"><img src="${escapeHtml(g.image_url)}" alt=""><span>${escapeHtml(g.caption||'تصویر گالری')}</span><button class="admin-btn danger" data-del-gallery="${g.id}" data-path="${escapeHtml(g.storage_path)}">حذف</button></div>`).join('')||'<p class="admin-note">هنوز تصویری بارگذاری نشده است.</p>';}
+ $('upload-image').addEventListener('click',async()=>{const b=current(),file=$('gallery-file').files[0];if(!file){status('اول یک تصویر انتخاب کنید.');return;}if(file.size>8*1024*1024){status('حجم هر تصویر باید کمتر از ۸ مگابایت باشد.');return;}const ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'');const path=`${b.branch_no}/${crypto.randomUUID()}.${ext}`;status('در حال بارگذاری تصویر...');const up=await db.storage.from('school-media').upload(path,file,{upsert:false,contentType:file.type});if(up.error){status(up.error.message);return;}const {data:pub}=db.storage.from('school-media').getPublicUrl(path);const {error}=await db.from('gallery').insert({branch_no:b.branch_no,image_url:pub.publicUrl,storage_path:path,caption:file.name,published:true});if(error){await db.storage.from('school-media').remove([path]);status(error.message);return;}$('gallery-file').value='';await loadGallery();status('تصویر به گالری اضافه شد.');});
+ $('gallery-list').addEventListener('click',async e=>{const id=e.target.dataset.delGallery;if(!id)return;const path=e.target.dataset.path;const del=await db.from('gallery').delete().eq('id',id);if(del.error){status(del.error.message);return;}if(path)await db.storage.from('school-media').remove([path]);await loadGallery();status('تصویر حذف شد.');});
+ db.auth.onAuthStateChange((event)=>{if(event==='SIGNED_IN')start().catch(e=>{$('login-status').textContent=e.message;});});start().catch(e=>{$('login-status').textContent=e.message;});
 })();
