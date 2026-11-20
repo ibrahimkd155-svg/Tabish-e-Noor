@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#102c69"><title>لیسه عالی خصوصی تابش نور</title>
+<link rel="stylesheet" href="style.css"><link rel="stylesheet" href="extra.css">
+</head>
+<body class="landing-page">
+<div id="intro" class="intro-screen" aria-label="Tabish-e-Noor intro">
+  <div class="intro-glow"></div>
+  <img class="intro-logo" src="logo.jpeg" alt="لوگوی لیسه عالی خصوصی تابش نور">
+  <div class="intro-title">TABISH-E-NOOR</div>
+  <div class="intro-subtitle">PRIVATE HIGH SCHOOL</div>
+  <div class="intro-loader"><span></span></div>
+</div>
+<header class="site-header"><a class="brand" href="index.html"><img src="logo.jpeg" alt="لوگوی مکتب"><span class="brand-name"><strong>لیسه عالی خصوصی تابش نور</strong><small>Tabish-e-Noor Private High School</small></span></a></header>
+<main class="welcome"><div class="welcome-card">
+<img class="welcome-logo" src="logo.jpeg" alt="لوگوی مکتب">
+<p class="eyebrow" data-i18n="welcome">به ویب‌سایت رسمی خوش آمدید</p>
+<h1 data-i18n="school">لیسه عالی خصوصی تابش نور</h1><p class="english-name">Tabish-e-Noor Private High School</p>
+<p data-i18n="choose">لطفاً زبان مورد نظر خود را انتخاب کنید</p>
+<div class="language-options"><button class="primary-button" data-lang="fa">دری</button><button class="primary-button" data-lang="ps">پښتو</button><button class="primary-button" data-lang="en">English</button></div>
+</div></main>
+<footer>© <span id="year"></span> لیسه عالی خصوصی تابش نور</footer>
+<script>
+const copy={fa:{welcome:'به ویب‌سایت رسمی خوش آمدید',school:'لیسه عالی خصوصی تابش نور',choose:'لطفاً زبان مورد نظر خود را انتخاب کنید'},ps:{welcome:'رسمي وېب‌پاڼې ته ښه راغلاست',school:'د تابش نور خصوصي عالي لېسه',choose:'مهرباني وکړئ خپله ژبه وټاکئ'},en:{welcome:'Welcome to the official website',school:'Tabish-e-Noor Private High School',choose:'Please select your preferred language'}};
+document.getElementById('year').textContent=new Date().getFullYear();
+document.querySelectorAll('[data-lang]').forEach(b=>b.addEventListener('click',()=>{localStorage.setItem('tn-language',b.dataset.lang);location.href='branches.html'}));
+const intro=document.getElementById('intro');if(sessionStorage.getItem('tn-intro-seen'))intro.classList.add('intro-skip');else{sessionStorage.setItem('tn-intro-seen','1');setTimeout(()=>intro.classList.add('intro-hidden'),2600)}
+</script>
+</body></html>
